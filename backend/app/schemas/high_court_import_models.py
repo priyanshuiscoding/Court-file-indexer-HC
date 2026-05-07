@@ -21,10 +21,15 @@ class HighCourtImportItemResult(BaseModel):
 
 class HighCourtImportResponse(BaseModel):
     ok: bool
+    requested_limit: int | None = None
+    scan_limit: int | None = None
+    scanned: int | None = None
     fetched: int
     imported: int
     queued: int
     skipped: int
+    skipped_existing: int = 0
+    pdf_not_found: int = 0
     failed: int
     results: list[HighCourtImportItemResult]
 

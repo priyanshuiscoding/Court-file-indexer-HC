@@ -87,7 +87,9 @@ class Settings(BaseSettings):
     HC_MYSQL_PASSWORD: str = ""
     HC_MYSQL_TABLE: str = "mp_indexing_batch"
     HC_MOUNT_ROOT: str = "/mnt/hitachi_disk1/JBP/SCANNING/scaned_clean_final"
-    HC_IMPORT_ORDER: str = "DESC"
+    HC_IMPORT_ORDER: str = "ASC"
+    HC_IMPORT_SCAN_MULTIPLIER: int = 5
+    HC_IMPORT_MAX_SCAN: int = 500
     HC_PDF_RESOLVE_RECURSIVE: bool = True
     HC_PDF_RESOLVE_MAX_DEPTH: int = 3
     HC_IMPORT_LIMIT: int = 10

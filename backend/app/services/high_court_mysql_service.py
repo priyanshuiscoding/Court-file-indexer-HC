@@ -37,6 +37,7 @@ class HighCourtMySQLService:
         table = settings.HC_MYSQL_TABLE or "mp_indexing_batch"
         db_name = settings.HC_MYSQL_DB or "Digitization"
         zero_date = "0000-00-00 00:00:00"
+        order = "DESC" if str(settings.HC_IMPORT_ORDER).upper() == "DESC" else "ASC"
 
         query = f"""
             SELECT id, batch_no, fil_no, entry_dt, total_pages
@@ -46,7 +47,7 @@ class HighCourtMySQLService:
               AND indexing_com_date = %s
               AND process_id = %s
               AND clean_fl_pdf_gen_dt != %s
-            ORDER BY batch_no ASC
+            ORDER BY id {order}
             LIMIT %s
         """
         params = (

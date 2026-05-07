@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.document import Document
+from app.models.high_court_import_job import HighCourtImportJob
 from app.schemas.high_court_import_models import HighCourtImportItemResult, HighCourtImportResponse
 from app.services.document_service import DocumentService
 from app.services.high_court_import_job_service import HighCourtImportJobService
@@ -29,30 +30,32 @@ class HighCourtImportService:
         self.job_service = HighCourtImportJobService()
 
     def import_pending(self, db: Session, limit: int | None = None) -> HighCourtImportResponse:
-        effective_limit = min(500, int(limit or settings.HC_IMPORT_LIMIT or 10))
-        # Read a larger window so we can skip already-seen rows and still move forward.
-        source_window = min(5000, max(effective_limit * 10, effective_limit))
-        logger.info("High Court import_pending started limit=%s source_window=%s", effective_limit, source_window)
-        rows = self.mysql_service.fetch_pending_rows(source_window)
-        rows = sorted(rows, key=lambda r: str(r.get("batch_no", "")).replace(",", "").strip())
+        requested_limit = min(500, int(limit or settings.HC_IMPORT_LIMIT or 10))
+        multiplier = max(1, int(settings.HC_IMPORT_SCAN_MULTIPLIER or 5))
+        max_scan = max(requested_limit, int(settings.HC_IMPORT_MAX_SCAN or 500))
+        scan_limit = min(requested_limit * multiplier, max_scan)
+        logger.info("High Court import_pending started requested_limit=%s scan_limit=%s", requested_limit, scan_limit)
+        rows = self.mysql_service.fetch_pending_rows(scan_limit)
 
         results: list[HighCourtImportItemResult] = []
         imported = 0
-        skipped = 0
+        skipped_existing = 0
+        pdf_not_found = 0
         failed = 0
-        considered = 0
 
         for row in rows:
-            if considered >= effective_limit:
+            if imported >= requested_limit:
                 break
 
+            external_row_id = str(row.get("id")) if row.get("id") is not None else None
             batch_no = str(row.get("batch_no") or "").replace(",", "").strip()
+            fil_no = str(row.get("fil_no")).strip() if row.get("fil_no") is not None else None
             if not batch_no:
                 results.append(
                     HighCourtImportItemResult(
-                        external_row_id=row.get("id"),
+                        external_row_id=external_row_id,
                         batch_no=None,
-                        fil_no=str(row.get("fil_no")) if row.get("fil_no") is not None else None,
+                        fil_no=fil_no,
                         status="FAILED",
                         error="Missing batch_no",
                     )
@@ -60,41 +63,68 @@ class HighCourtImportService:
                 failed += 1
                 continue
 
-            existing_job = self.job_service.get_by_batch_no(db, batch_no)
-            if existing_job and existing_job.status in {"QUEUED", "SKIPPED_DUPLICATE"}:
-                logger.info("Skipping already-processed High Court batch_no=%s status=%s", batch_no, existing_job.status)
-                skipped += 1
+            if self._already_imported(db, external_row_id=external_row_id, batch_no=batch_no):
+                logger.info("Skipping existing High Court row id=%s batch_no=%s", external_row_id, batch_no)
+                skipped_existing += 1
+                results.append(
+                    HighCourtImportItemResult(
+                        external_row_id=external_row_id,
+                        batch_no=batch_no,
+                        fil_no=fil_no,
+                        status="SKIPPED_EXISTING",
+                        error=None,
+                    )
+                )
                 continue
 
-            considered += 1
             result = self._import_one(db, row)
             results.append(result)
             if result.status == "QUEUED":
                 imported += 1
                 logger.info("Imported High Court batch_no=%s document_id=%s", result.batch_no, result.document_id)
             elif result.status == "SKIPPED_DUPLICATE":
-                skipped += 1
+                skipped_existing += 1
                 logger.info("Skipped duplicate High Court batch_no=%s", result.batch_no)
+            elif result.status == "PDF_NOT_FOUND":
+                pdf_not_found += 1
             else:
                 failed += 1
 
         response = HighCourtImportResponse(
-            ok=failed == 0,
+            ok=True,
+            requested_limit=requested_limit,
+            scan_limit=scan_limit,
+            scanned=len(rows),
             fetched=len(rows),
             imported=imported,
             queued=imported,
-            skipped=skipped,
+            skipped=skipped_existing,
+            skipped_existing=skipped_existing,
+            pdf_not_found=pdf_not_found,
             failed=failed,
             results=results,
         )
         logger.info(
-            "High Court import_pending completed fetched=%s imported=%s skipped=%s failed=%s",
+            "High Court import_pending completed scanned=%s imported=%s skipped_existing=%s pdf_not_found=%s failed=%s",
             response.fetched,
             response.imported,
-            response.skipped,
+            response.skipped_existing,
+            response.pdf_not_found,
             response.failed,
         )
         return response
+
+    def _already_imported(self, db: Session, *, external_row_id: str | None, batch_no: str) -> bool:
+        conditions = [HighCourtImportJob.batch_no == batch_no]
+        if external_row_id:
+            conditions.append(HighCourtImportJob.external_row_id == external_row_id)
+
+        existing_job = db.scalars(select(HighCourtImportJob).where(or_(*conditions)).limit(1)).first()
+        if existing_job:
+            return True
+
+        existing_doc = db.scalars(select(Document).where(Document.batch_no == batch_no).limit(1)).first()
+        return existing_doc is not None
 
     def import_by_batch_no(self, db: Session, batch_no: str) -> HighCourtImportItemResult:
         row = {
