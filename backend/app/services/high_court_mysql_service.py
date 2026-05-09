@@ -36,6 +36,8 @@ class HighCourtMySQLService:
     def fetch_pending_rows(self, limit: int) -> list[dict[str, Any]]:
         table = settings.HC_MYSQL_TABLE or "mp_indexing_batch"
         db_name = settings.HC_MYSQL_DB or "Digitization"
+        complete_field = settings.HC_MYSQL_COMPLETE_FIELD or "completed"
+        date_field = settings.HC_MYSQL_INDEX_DATE_FIELD or "indexing_com_date"
         zero_date = "0000-00-00 00:00:00"
         order = "DESC" if str(settings.HC_IMPORT_ORDER).upper() == "DESC" else "ASC"
 
@@ -43,9 +45,10 @@ class HighCourtMySQLService:
             SELECT id, batch_no, fil_no, entry_dt, total_pages
             FROM `{db_name}`.`{table}`
             WHERE branch = %s
-              AND completed = %s
-              AND indexing_com_date = %s
+              AND `{complete_field}` = %s
+              AND (`{date_field}` = %s OR `{date_field}` IS NULL)
               AND process_id = %s
+              AND clean_fl_pdf_gen_dt IS NOT NULL
               AND clean_fl_pdf_gen_dt != %s
             ORDER BY id {order}
             LIMIT %s

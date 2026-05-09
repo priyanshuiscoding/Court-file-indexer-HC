@@ -121,7 +121,17 @@ class HighCourtImportService:
 
         existing_job = db.scalars(select(HighCourtImportJob).where(or_(*conditions)).limit(1)).first()
         if existing_job:
-            return True
+            if existing_job.document_id is not None:
+                return True
+            return existing_job.status in {
+                "QUEUED",
+                "PROCESSING",
+                "INDEX_READY",
+                "CHAT_READY",
+                "REVIEW_REQUIRED",
+                "EXTERNAL_COMPLETED",
+                "SKIPPED_DUPLICATE",
+            }
 
         existing_doc = db.scalars(select(Document).where(Document.batch_no == batch_no).limit(1)).first()
         return existing_doc is not None

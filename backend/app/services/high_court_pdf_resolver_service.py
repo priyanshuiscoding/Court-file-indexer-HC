@@ -57,6 +57,23 @@ class HighCourtPDFResolverService:
 
         total_files = len(all_files)
         pdfs = [path for path in all_files if path.is_file() and path.suffix.lower() == ".pdf"]
+
+        if not pdfs and settings.HC_PDF_RESOLVE_RECURSIVE:
+            max_depth = max(1, int(settings.HC_PDF_RESOLVE_MAX_DEPTH or 3))
+            try:
+                pdfs = [
+                    path
+                    for path in base_path.rglob("*.pdf")
+                    if path.is_file() and len(path.relative_to(base_path).parts) <= max_depth
+                ]
+            except Exception:
+                logger.exception(
+                    "[HC_IMPORT] batch_no=%s resolved_path=%s reason=recursive_scan_failed",
+                    batch,
+                    base_path,
+                )
+                return None
+
         pdf_count = len(pdfs)
         logger.info(
             "[HC_IMPORT] batch_no=%s folder_path=%s total_files=%s pdf_count=%s",
