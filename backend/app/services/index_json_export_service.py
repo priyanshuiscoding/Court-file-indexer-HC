@@ -8,6 +8,7 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.models.document import Document
+from app.services.document_type_mapper import DocumentTypeMapper
 
 settings = get_settings()
 
@@ -16,6 +17,7 @@ class IndexJSONExportService:
     def __init__(self) -> None:
         self.root = Path(settings.EXPORT_STORAGE_DIR) / "index_json"
         self.root.mkdir(parents=True, exist_ok=True)
+        self.document_type_mapper = DocumentTypeMapper()
 
     def _safe_stem(self, file_name: str) -> str:
         stem = Path(file_name or "document").stem
@@ -56,6 +58,7 @@ class IndexJSONExportService:
     def save_index_json(self, document: Document, rows: list[dict]) -> str:
         parsed = self._parse_case_tokens(document.file_name, document.cnr_number)
         generated_at = datetime.now(timezone.utc).isoformat()
+        mapped_rows = self.document_type_mapper.enrich_rows(rows)
 
         payload = {
             "cnr_no": document.cnr_number or Path(document.file_name).stem,
@@ -68,7 +71,7 @@ class IndexJSONExportService:
             "batch_no": document.batch_no,
             "page_count": document.page_count,
             "generated_at": generated_at,
-            "rows": rows,
+            "rows": mapped_rows,
             "others": {},
         }
 

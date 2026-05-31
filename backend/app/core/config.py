@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     MAPPING_SHEET_PATH: str = "./storage/config/document_mapping.xlsx"
     MAPPING_SHEET_NAME: str = "Sheet1"
     MAPPING_REFRESH_SECONDS: int = 60
+    DOCMASTER_MAPPING_PATH: str = "./storage/config/docmaster_mapping_active.xlsx"
 
     DEFAULT_INDEX_SCAN_START: int = 1
     DEFAULT_INDEX_SCAN_END: int = 10
